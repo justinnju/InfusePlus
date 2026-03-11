@@ -3,7 +3,6 @@ name: Create Infuse Plus app
 on:
   workflow_dispatch:
     inputs:
-
       ipa_url:
         description: "URL to the decrypted IPA file"
         default: ""
@@ -34,26 +33,26 @@ concurrency:
 
 jobs:
   build:
-    name: 
     runs-on: macos-latest
     permissions:
       contents: write
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout Main
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@v6
         with:
           path: main
           submodules: recursive
 
-      - name: Hide sensitive inputs
-        uses: levibostian/action-hide-sensitive-inputs@v1
-        with:
-          exclude_inputs: display_name,tweak_version,bundle_id
+      - name: Mask sensitive inputs
+        run: |
+          echo "::add-mask::${{ inputs.ipa_url }}"
 
       - name: Validate IPA URL
         run: |
-          curl -L -r 0-1023 -o sample.part "${{ inputs.ipa_url }}" > /dev/null 2>&1
+          curl -fL -r 0-1023 -o sample.part "${{ inputs.ipa_url }}" > /dev/null 2>&1
           file_type=$(file --mime-type -b sample.part)
 
           if [[ "$file_type" != "application/x-ios-app" && "$file_type" != "application/zip" ]]; then
@@ -65,7 +64,7 @@ jobs:
         run: brew install make ldid
 
       - name: Set PATH environment variable
-        run: echo "$(brew --prefix make)/libexec/gnubin" >> $GITHUB_PATH
+        run: echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
 
       - name: Install cyan
         run: pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
@@ -74,17 +73,24 @@ jobs:
         id: download_infp
         run: |
           deb_url="https://github.com/dayanch96/InfusePlus/releases/download/v${{ inputs.tweak_version }}/com.dvntm.infuseplus_${{ inputs.tweak_version }}_iphoneos-arm.deb"
-          wget "$deb_url" --no-verbose -O ${{ github.workspace }}/infplus.deb
+          wget "$deb_url" --no-verbose -O "${{ github.workspace }}/infplus.deb"
 
       - name: Download Infuse
         id: download_infuse
-        run: wget "${{ inputs.ipa_url }}" --no-verbose -O ${{ github.workspace }}/infuse.ipa
+        run: |
+          wget "${{ inputs.ipa_url }}" --no-verbose -O "${{ github.workspace }}/infuse.ipa"
 
       - name: Inject tweaks into IPA
-        run: cyan -i infuse.ipa -o InfusePlus_${{ inputs.tweak_version }}.ipa -uwef infplus.deb -n "${{ inputs.display_name }}" -b ${{ inputs.bundle_id }}
+        run: |
+          cyan \
+            -i infuse.ipa \
+            -o "InfusePlus_${{ inputs.tweak_version }}.ipa" \
+            -uwef infplus.deb \
+            -n "${{ inputs.display_name }}" \
+            -b "${{ inputs.bundle_id }}"
 
       - name: Upload to GitHub Releases
-        uses: softprops/action-gh-release@v2.0.1
+        uses: softprops/action-gh-release@v2
         with:
           name: InfusePlus v${{ inputs.tweak_version }} (${{ github.run_number }})
           files: InfusePlus_${{ inputs.tweak_version }}.ipa
